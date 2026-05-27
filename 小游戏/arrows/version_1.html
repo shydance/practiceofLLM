@@ -1,0 +1,1173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Arrows // Cyber Escape</title>
+  <style>
+    :root{
+      --bg1:#050816;
+      --bg2:#0b1230;
+      --panel:#0f1738cc;
+      --cyan:#35f2ff;
+      --cyan2:#8af8ff;
+      --red:#ff4d73;
+      --yellow:#ffe66d;
+      --white:#eafcff;
+    }
+
+    *{box-sizing:border-box}
+    html,body{
+      margin:0;
+      width:100%;
+      height:100%;
+      overflow:hidden;
+      font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+      background:
+        radial-gradient(circle at 20% 20%, #16214e 0%, transparent 30%),
+        radial-gradient(circle at 80% 25%, #2a145a 0%, transparent 25%),
+        radial-gradient(circle at 50% 80%, #103f56 0%, transparent 30%),
+        linear-gradient(180deg,var(--bg2),var(--bg1));
+      color:var(--white);
+    }
+
+    body::before{
+      content:"";
+      position:fixed;
+      inset:0;
+      pointer-events:none;
+      background:
+        linear-gradient(rgba(255,255,255,.014) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.014) 1px, transparent 1px);
+      background-size:32px 32px;
+      mix-blend-mode:screen;
+    }
+
+    .wrap{
+      width:100%;
+      height:100%;
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+      padding:16px;
+    }
+
+    .topbar{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:12px;
+      padding:12px 16px;
+      border-radius:16px;
+      background:var(--panel);
+      border:1px solid rgba(122,247,255,.18);
+      box-shadow:0 0 10px rgba(53,242,255,.12), inset 0 0 12px rgba(53,242,255,.05);
+      backdrop-filter:blur(4px);
+    }
+
+    .title h1{
+      margin:0;
+      font-size:22px;
+      color:var(--cyan2);
+      letter-spacing:1px;
+      text-shadow:0 0 8px rgba(53,242,255,.4);
+    }
+
+    .title .sub{
+      margin-top:4px;
+      font-size:12px;
+      color:#b8d6ff;
+      opacity:.9;
+    }
+
+    .hud{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+
+    .card{
+      min-width:110px;
+      padding:10px 14px;
+      border-radius:14px;
+      background:linear-gradient(180deg, rgba(24,38,76,.88), rgba(10,18,45,.86));
+      border:1px solid rgba(120,247,255,.18);
+    }
+
+    .card .label{
+      font-size:11px;
+      color:#9fc3ff;
+      text-transform:uppercase;
+      letter-spacing:1px;
+    }
+
+    .card .value{
+      margin-top:4px;
+      font-size:24px;
+      font-weight:700;
+      color:white;
+    }
+
+    .btns{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+
+    button{
+      border:none;
+      cursor:pointer;
+      color:white;
+      padding:10px 16px;
+      border-radius:12px;
+      font-weight:700;
+      letter-spacing:.4px;
+      background:linear-gradient(135deg, #18295f, #4b1f89);
+      border:1px solid rgba(120,247,255,.18);
+      transition:.18s transform,.18s filter;
+    }
+    button:hover{transform:translateY(-1px);filter:brightness(1.06)}
+    button:active{transform:none}
+    button.secondary{
+      background:linear-gradient(135deg, #11213d, #1f4470);
+    }
+
+    .stagePanel{
+      position:relative;
+      flex:1;
+      min-height:0;
+      border-radius:18px;
+      background:var(--panel);
+      border:1px solid rgba(122,247,255,.16);
+      box-shadow:0 0 10px rgba(53,242,255,.10), inset 0 0 12px rgba(53,242,255,.03);
+      overflow:hidden;
+      padding:10px;
+      backdrop-filter:blur(4px);
+    }
+
+    canvas{
+      width:100%;
+      height:100%;
+      display:block;
+      border-radius:14px;
+      background:
+        radial-gradient(circle at 50% 50%, rgba(28,49,102,.30), rgba(5,9,25,.96)),
+        linear-gradient(180deg, rgba(16,24,58,.95), rgba(8,12,28,.98));
+    }
+
+    .overlay{
+      position:absolute;
+      inset:10px;
+      border-radius:14px;
+      display:none;
+      align-items:center;
+      justify-content:center;
+      background:rgba(4,7,18,.52);
+      backdrop-filter:blur(4px);
+    }
+    .overlay.show{display:flex}
+
+    .modal{
+      width:min(420px,92%);
+      padding:22px 20px;
+      border-radius:18px;
+      background:linear-gradient(180deg, rgba(14,24,58,.97), rgba(8,13,30,.97));
+      border:1px solid rgba(120,247,255,.22);
+      text-align:center;
+    }
+
+    .modal h2{
+      margin:0 0 10px;
+      color:var(--cyan2);
+    }
+
+    .modal p{
+      margin:0 0 16px;
+      line-height:1.7;
+      color:#dce9ff;
+    }
+
+    @media (max-width: 700px){
+      .topbar{
+        flex-direction:column;
+        align-items:stretch;
+      }
+      .hud{
+        justify-content:space-between;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="title">
+        <h1>ARROWS // CYBER ESCAPE</h1>
+        <div class="sub">点击线条，让节点同步逐格水平/垂直逃离</div>
+      </div>
+
+      <div class="hud">
+        <div class="card">
+          <div class="label">Lives / 体力</div>
+          <div class="value" id="livesText">3</div>
+        </div>
+        <div class="card">
+          <div class="label">Escaped / 已逃离</div>
+          <div class="value" id="escapedText">0/0</div>
+        </div>
+
+        <div class="btns">
+          <button id="restartBtn">重新生成</button>
+          <button id="nextBtn" class="secondary">下一局</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="stagePanel">
+      <canvas id="gameCanvas"></canvas>
+
+      <div class="overlay" id="overlay">
+        <div class="modal">
+          <h2 id="modalTitle">关卡完成</h2>
+          <p id="modalDesc">你已让所有线条顺利逃离点阵。</p>
+          <button id="overlayBtn">下一局</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const canvas = document.getElementById('gameCanvas');
+      const ctx = canvas.getContext('2d');
+
+      const livesText = document.getElementById('livesText');
+      const escapedText = document.getElementById('escapedText');
+      const restartBtn = document.getElementById('restartBtn');
+      const nextBtn = document.getElementById('nextBtn');
+      const overlay = document.getElementById('overlay');
+      const overlayBtn = document.getElementById('overlayBtn');
+      const modalTitle = document.getElementById('modalTitle');
+      const modalDesc = document.getElementById('modalDesc');
+
+      const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+
+      const LINE_COLORS = [
+        "#7cf6ff",
+        "#c685ff",
+        "#4dffb8",
+        "#ffe66d",
+        "#ff9f68",
+        "#6de3ff",
+        "#f785ff"
+      ];
+
+      let state = null;
+      let lastTs = 0;
+      let seedCounter = 0;
+      let inputLocked = false;
+
+      const CONFIG = {
+        gridW: 10,
+        gridH: 10,
+        lives: 3,
+        minLines: 4,
+        maxLines: 6,
+        minLen: 2,
+        maxLen: 5,
+        maxGenerateAttempts: 240,
+        maxLineAttempts: 220
+      };
+
+      function randInt(min, max){
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+      }
+
+      function sample(arr){
+        return arr[Math.floor(Math.random() * arr.length)];
+      }
+
+      function keyOf(p){ return `${p.x},${p.y}`; }
+      function pointEq(a,b){ return a.x === b.x && a.y === b.y; }
+
+      function dirVec(dir){
+        switch(dir){
+          case 'N': return {x:0,y:-1};
+          case 'S': return {x:0,y:1};
+          case 'W': return {x:-1,y:0};
+          case 'E': return {x:1,y:0};
+          default: return {x:0,y:0};
+        }
+      }
+
+      function insideGridRaw(x, y, gridW, gridH){
+        return x >= 0 && y >= 0 && x < gridW && y < gridH;
+      }
+
+      function insideGridPoint(p, gridW, gridH){
+        return insideGridRaw(p.x, p.y, gridW, gridH);
+      }
+
+      function deepClone(obj){
+        return JSON.parse(JSON.stringify(obj));
+      }
+
+      function buildSegments(points){
+        const segs = [];
+        for(let i=0;i<points.length-1;i++){
+          segs.push({a: points[i], b: points[i+1]});
+        }
+        return segs;
+      }
+
+      function isHorizontal(seg){ return seg.a.y === seg.b.y; }
+      function between(v, a, b){
+        const min = Math.min(a,b), max = Math.max(a,b);
+        return v >= min && v <= max;
+      }
+
+      function segmentPointSet(points){
+        const set = new Set();
+        for(let i=0;i<points.length;i++){
+          set.add(keyOf(points[i]));
+        }
+        return set;
+      }
+
+      function segmentCrossOrOverlap(seg1, seg2){
+        const h1 = isHorizontal(seg1);
+        const h2 = isHorizontal(seg2);
+
+        if(h1 && h2){
+          if(seg1.a.y !== seg2.a.y) return false;
+          const a1 = Math.min(seg1.a.x, seg1.b.x), a2 = Math.max(seg1.a.x, seg1.b.x);
+          const b1 = Math.min(seg2.a.x, seg2.b.x), b2 = Math.max(seg2.a.x, seg2.b.x);
+          return Math.max(a1,b1) <= Math.min(a2,b2);
+        }
+
+        if(!h1 && !h2){
+          if(seg1.a.x !== seg2.a.x) return false;
+          const a1 = Math.min(seg1.a.y, seg1.b.y), a2 = Math.max(seg1.a.y, seg1.b.y);
+          const b1 = Math.min(seg2.a.y, seg2.b.y), b2 = Math.max(seg2.a.y, seg2.b.y);
+          return Math.max(a1,b1) <= Math.min(a2,b2);
+        }
+
+        const hSeg = h1 ? seg1 : seg2;
+        const vSeg = h1 ? seg2 : seg1;
+        return between(vSeg.a.x, hSeg.a.x, hSeg.b.x) && between(hSeg.a.y, vSeg.a.y, vSeg.b.y);
+      }
+
+      function linesIntersectOrTouch(pointsA, pointsB){
+        const setA = segmentPointSet(pointsA);
+        const setB = segmentPointSet(pointsB);
+
+        for(const k of setA){
+          if(setB.has(k)) return true;
+        }
+
+        const segsA = buildSegments(pointsA);
+        const segsB = buildSegments(pointsB);
+
+        for(let i=0;i<segsA.length;i++){
+          for(let j=0;j<segsB.length;j++){
+            if(segmentCrossOrOverlap(segsA[i], segsB[j])) return true;
+          }
+        }
+        return false;
+      }
+
+      function lineSelfValid(points){
+        const set = new Set();
+        for(let i=0;i<points.length;i++){
+          const k = keyOf(points[i]);
+          if(set.has(k)) return false;
+          set.add(k);
+        }
+
+        for(let i=0;i<points.length-1;i++){
+          const a = points[i], b = points[i+1];
+          const dx = Math.abs(a.x - b.x);
+          const dy = Math.abs(a.y - b.y);
+          if(dx + dy !== 1) return false;
+        }
+
+        const segs = buildSegments(points);
+        for(let i=0;i<segs.length;i++){
+          for(let j=i+1;j<segs.length;j++){
+            if(Math.abs(i-j) <= 1) continue;
+            if(segmentCrossOrOverlap(segs[i], segs[j])) return false;
+          }
+        }
+        return true;
+      }
+
+      function generatePolyline(gridW, gridH, minLen, maxLen){
+        const dirs = ['N','S','W','E'];
+
+        for(let attempt=0; attempt<CONFIG.maxLineAttempts; attempt++){
+          const len = randInt(minLen, maxLen);
+          let p = { x: randInt(1, gridW - 2), y: randInt(1, gridH - 2) };
+          const points = [{x:p.x, y:p.y}];
+          let prevDir = null;
+
+          for(let i=1;i<len;i++){
+            let candidates = dirs.filter(d => {
+              const v = dirVec(d);
+              const nx = p.x + v.x;
+              const ny = p.y + v.y;
+              if(!insideGridRaw(nx, ny, gridW, gridH)) return false;
+              const np = {x:nx, y:ny};
+              if(points.some(pp => pointEq(pp, np))) return false;
+              return true;
+            });
+
+            if(!candidates.length) break;
+
+            if(prevDir && Math.random() < 0.45){
+              candidates.sort((a,b) => (a===prevDir ? -1 : 0) - (b===prevDir ? -1 : 0));
+            }
+
+            const chosen = sample(candidates);
+            const v = dirVec(chosen);
+            p = {x:p.x + v.x, y:p.y + v.y};
+            points.push({x:p.x, y:p.y});
+            prevDir = chosen;
+          }
+
+          if(points.length < minLen) continue;
+          if(!lineSelfValid(points)) continue;
+          return points;
+        }
+        return null;
+      }
+
+      function possibleDirsForLine(points){
+        const dirs = ['N','S','W','E'];
+        const valid = [];
+
+        for(let i=0;i<dirs.length;i++){
+          const dir = dirs[i];
+          const v = dirVec(dir);
+          const head = points[points.length - 1];
+          const pre = points[points.length - 2];
+
+          if(head.x - pre.x !== v.x || head.y - pre.y !== v.y) continue;
+
+          const arrowPos = {x: head.x + v.x, y: head.y + v.y};
+          let hit = false;
+          for(let k=0;k<points.length;k++){
+            if(points[k].x === arrowPos.x && points[k].y === arrowPos.y){
+              hit = true;
+              break;
+            }
+          }
+          if(hit) continue;
+
+          valid.push(dir);
+        }
+
+        return valid;
+      }
+
+      function buildFlowFrames(originalPoints, dir, gridW, gridH){
+        const v = dirVec(dir);
+        const frames = [];
+        let current = originalPoints.map(p => ({x:p.x, y:p.y}));
+
+        while(true){
+          const head = current[current.length - 1];
+          const newHead = { x: head.x + v.x, y: head.y + v.y };
+          const next = new Array(current.length);
+
+          for(let i=0;i<current.length-1;i++){
+            next[i] = {x: current[i+1].x, y: current[i+1].y};
+          }
+          next[current.length - 1] = newHead;
+          frames.push(next);
+
+          let visibleCount = 0;
+          for(let i=0;i<next.length;i++){
+            if(insideGridPoint(next[i], gridW, gridH)) visibleCount++;
+          }
+          if(visibleCount === 0) break;
+
+          current = next;
+        }
+
+        return frames;
+      }
+
+      function lineEscapeData(line, gridW, gridH){
+        const frames = buildFlowFrames(line.originalPoints, line.dir, gridW, gridH);
+        const pathCells = [];
+
+        for(let i=0;i<frames.length;i++){
+          const frame = frames[i];
+          for(let j=0;j<frame.length;j++){
+            const p = frame[j];
+            if(insideGridPoint(p, gridW, gridH)){
+              pathCells.push({x:p.x, y:p.y});
+            }
+          }
+        }
+
+        return {
+          pathCells,
+          totalSteps: frames.length,
+          frames
+        };
+      }
+
+      function levelSolvable(lines, gridW, gridH){
+        const unresolved = new Set(lines.map(l => l.id));
+
+        while(unresolved.size){
+          let progressed = false;
+
+          for(let i=0;i<lines.length;i++){
+            const line = lines[i];
+            if(!unresolved.has(line.id)) continue;
+
+            const occupied = new Set();
+            for(let j=0;j<lines.length;j++){
+              const other = lines[j];
+              if(other.id === line.id) continue;
+              if(unresolved.has(other.id)){
+                for(let k=0;k<other.originalPoints.length;k++){
+                  occupied.add(keyOf(other.originalPoints[k]));
+                }
+              }
+            }
+
+            const esc = lineEscapeData(line, gridW, gridH);
+            let collision = false;
+            for(let p=0;p<esc.pathCells.length;p++){
+              if(occupied.has(keyOf(esc.pathCells[p]))){
+                collision = true;
+                break;
+              }
+            }
+
+            if(!collision){
+              unresolved.delete(line.id);
+              progressed = true;
+            }
+          }
+
+          if(!progressed) return false;
+        }
+
+        return true;
+      }
+
+      function generateLevel(){
+        for(let attempt=0; attempt<CONFIG.maxGenerateAttempts; attempt++){
+          const gridW = CONFIG.gridW;
+          const gridH = CONFIG.gridH;
+          const lineCount = randInt(CONFIG.minLines, CONFIG.maxLines);
+
+          const lines = [];
+          let ok = true;
+
+          for(let i=0;i<lineCount;i++){
+            let accepted = null;
+
+            for(let k=0;k<CONFIG.maxLineAttempts;k++){
+              const pts = generatePolyline(gridW, gridH, CONFIG.minLen, CONFIG.maxLen);
+              if(!pts) continue;
+
+              let bad = false;
+              for(let m=0;m<lines.length;m++){
+                if(linesIntersectOrTouch(pts, lines[m].originalPoints)){
+                  bad = true;
+                  break;
+                }
+              }
+              if(bad) continue;
+
+              const dirs = possibleDirsForLine(pts);
+              if(!dirs.length) continue;
+
+              const dir = sample(dirs);
+
+              accepted = {
+                id: String.fromCharCode(65 + i),
+                baseColor: LINE_COLORS[i % LINE_COLORS.length],
+                originalPoints: deepClone(pts),
+                dir,
+                status: 'occupied',
+                everFailed: false,
+                displayRed: false,
+                animProgress: 0,
+                backProgress: 0,
+                flowFrames: buildFlowFrames(pts, dir, gridW, gridH),
+                collisionFx: null,
+                successSteps: 0,
+                failToStep: 0,
+                speedForward: 1/0.12,
+                speedBack: 1/0.06,
+                triggeredGameOver: false
+              };
+              break;
+            }
+
+            if(!accepted){
+              ok = false;
+              break;
+            }
+
+            lines.push(accepted);
+          }
+
+          if(!ok) continue;
+          if(!levelSolvable(lines, gridW, gridH)) continue;
+
+          return {
+            name: `Stage ${++seedCounter}`,
+            gridW,
+            gridH,
+            lives: CONFIG.lives,
+            lines
+          };
+        }
+
+        return fallbackLevel();
+      }
+
+      function fallbackLevel(){
+        const raw = [
+          { id:'A', color:"#7cf6ff", pts:[[2,4],[3,4],[4,4]], dir:'E' },
+          { id:'B', color:"#c685ff", pts:[[6,2],[6,3],[6,4]], dir:'S' },
+          { id:'C', color:"#4dffb8", pts:[[2,7],[3,7],[4,7],[5,7]], dir:'W' },
+          { id:'D', color:"#ffe66d", pts:[[8,6],[8,7],[8,8]], dir:'S' }
+        ];
+
+        return {
+          name: `Stage ${++seedCounter}`,
+          gridW: 10,
+          gridH: 10,
+          lives: 3,
+          lines: raw.map((r) => ({
+            id: r.id,
+            baseColor: r.color,
+            originalPoints: r.pts.map(([x,y]) => ({x,y})),
+            dir: r.dir,
+            status: 'occupied',
+            everFailed: false,
+            displayRed: false,
+            animProgress: 0,
+            backProgress: 0,
+            flowFrames: buildFlowFrames(r.pts.map(([x,y]) => ({x,y})), r.dir, 10, 10),
+            collisionFx: null,
+            successSteps: 0,
+            failToStep: 0,
+            speedForward: 1/0.12,
+            speedBack: 1/0.06,
+            triggeredGameOver: false
+          }))
+        };
+      }
+
+      function initGame(){
+        state = generateLevel();
+        inputLocked = false;
+        overlay.classList.remove('show');
+        fitCanvas();
+        updateHUD();
+      }
+
+      function fitCanvas(){
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = Math.floor(rect.width * dpr);
+        canvas.height = Math.floor(rect.height * dpr);
+        ctx.setTransform(dpr,0,0,dpr,0,0);
+
+        if(!state) return;
+
+        const margin = 54;
+        const availW = rect.width - margin * 2;
+        const availH = rect.height - margin * 2;
+        const cell = Math.min(
+          availW / Math.max(1, state.gridW - 1),
+          availH / Math.max(1, state.gridH - 1),
+          58
+        );
+
+        state.render = {
+          cell,
+          offsetX: (rect.width - (state.gridW - 1) * cell) / 2,
+          offsetY: (rect.height - (state.gridH - 1) * cell) / 2
+        };
+      }
+
+      function updateHUD(){
+        const escaped = state.lines.filter(l => l.status === 'escaped').length;
+        livesText.textContent = state.lives;
+        escapedText.textContent = `${escaped}/${state.lines.length}`;
+      }
+
+      function gridToPixel(p){
+        const {cell, offsetX, offsetY} = state.render;
+        return { x: offsetX + p.x * cell, y: offsetY + p.y * cell };
+      }
+
+      function getOccupancySnapshot(excludeId=null){
+        const occupied = new Set();
+        for(let i=0;i<state.lines.length;i++){
+          const line = state.lines[i];
+          if(line.id === excludeId) continue;
+          if(line.status === 'occupied'){
+            for(let k=0;k<line.originalPoints.length;k++){
+              occupied.add(keyOf(line.originalPoints[k]));
+            }
+          }
+        }
+        return occupied;
+      }
+
+      function firstCollisionInfo(line, occupiedSet){
+        for(let i=0;i<line.flowFrames.length;i++){
+          const frame = line.flowFrames[i];
+          for(let j=0;j<frame.length;j++){
+            const p = frame[j];
+            if(insideGridPoint(p, state.gridW, state.gridH) && occupiedSet.has(keyOf(p))){
+              return { step: i + 1, point: {x:p.x, y:p.y} };
+            }
+          }
+        }
+        return null;
+      }
+
+      function clickLine(line){
+        if(inputLocked || line.status !== 'occupied') return;
+
+        const occupied = getOccupancySnapshot(line.id);
+        const collision = firstCollisionInfo(line, occupied);
+
+        if(collision){
+          const firstFail = !line.everFailed;
+          if(firstFail){
+            state.lives -= 1;
+            line.everFailed = true;
+            line.displayRed = true;
+          }
+
+          line.collisionFx = {
+            point: collision.point,
+            time: 0
+          };
+
+          line.status = 'movingFailForward';
+          line.failToStep = collision.step;
+          line.animProgress = 0;
+          line.backProgress = 0;
+          line.speedForward = (!firstFail && line.displayRed) ? 1/0.03 : 1/0.12;
+          line.speedBack = (!firstFail && line.displayRed) ? 1/0.03 : 1/0.06;
+
+          updateHUD();
+
+          if(state.lives <= 0){
+            inputLocked = true;
+            line.triggeredGameOver = true;
+          }
+        }else{
+          line.status = 'movingSuccess';
+          line.animProgress = 0;
+          line.successSteps = line.flowFrames.length;
+          line.speedForward = 1/0.12;
+          if(line.displayRed) line.displayRed = false;
+          updateHUD();
+        }
+      }
+
+      function getAxisSlidePoint(a, b, t){
+        const p = {x:a.x, y:a.y};
+        if(a.x !== b.x){
+          p.x = a.x + (b.x - a.x) * t;
+        }else if(a.y !== b.y){
+          p.y = a.y + (b.y - a.y) * t;
+        }
+        return p;
+      }
+
+      function getFramePointsAt(line, progress){
+        const original = line.originalPoints;
+        const frames = line.flowFrames;
+
+        if(progress <= 0){
+          return original;
+        }
+
+        const total = frames.length;
+        if(progress >= total){
+          return frames[total - 1];
+        }
+
+        const stepIndex = Math.floor(progress);
+        const localT = progress - stepIndex;
+
+        const from = stepIndex === 0 ? original : frames[stepIndex - 1];
+        const to = frames[stepIndex];
+
+        const result = new Array(from.length);
+        for(let i=0;i<from.length;i++){
+          result[i] = getAxisSlidePoint(from[i], to[i], localT);
+        }
+        return result;
+      }
+
+      function getDisplayedPoints(line){
+        if(line.status === 'occupied') return line.originalPoints;
+        if(line.status === 'movingSuccess') return getFramePointsAt(line, line.animProgress);
+        if(line.status === 'movingFailForward'){
+          const progress = Math.min(line.animProgress, line.failToStep);
+          return getFramePointsAt(line, progress);
+        }
+        if(line.status === 'movingFailBack'){
+          const progress = Math.max(0, line.failToStep - line.backProgress);
+          return getFramePointsAt(line, progress);
+        }
+        return [];
+      }
+
+      function update(dt){
+        let escapedChanged = false;
+
+        for(let i=0;i<state.lines.length;i++){
+          const line = state.lines[i];
+
+          if(line.collisionFx){
+            line.collisionFx.time += dt;
+            if(line.collisionFx.time > 0.75 && line.status === 'occupied'){
+              line.collisionFx = null;
+            }
+          }
+
+          if(line.status === 'movingSuccess'){
+            line.animProgress += dt * line.speedForward;
+            if(line.animProgress >= line.successSteps){
+              line.animProgress = line.successSteps;
+              line.status = 'escaped';
+              escapedChanged = true;
+            }
+          }else if(line.status === 'movingFailForward'){
+            line.animProgress += dt * line.speedForward;
+            if(line.animProgress >= line.failToStep){
+              line.animProgress = line.failToStep;
+              line.status = 'movingFailBack';
+            }
+          }else if(line.status === 'movingFailBack'){
+            line.backProgress += dt * line.speedBack;
+            if(line.backProgress >= line.failToStep){
+              line.backProgress = line.failToStep;
+              line.status = 'occupied';
+              if(line.triggeredGameOver){
+                line.triggeredGameOver = false;
+                showFail();
+              }
+            }
+          }
+        }
+
+        if(escapedChanged){
+          updateHUD();
+          checkWin();
+        }
+      }
+
+      function checkWin(){
+        const allEscaped = state.lines.every(l => l.status === 'escaped');
+        if(allEscaped && state.lives > 0){
+          inputLocked = true;
+          modalTitle.textContent = '关卡完成';
+          modalDesc.textContent = '所有线条都已逃离点阵。';
+          overlayBtn.textContent = '下一局';
+          overlay.classList.add('show');
+        }
+      }
+
+      function showFail(){
+        modalTitle.textContent = '逃生失败';
+        modalDesc.textContent = '体力已耗尽，可以重新生成挑战。';
+        overlayBtn.textContent = '重新生成';
+        overlay.classList.add('show');
+      }
+
+      function drawGrid(){
+        const {gridW, gridH} = state;
+        const {cell, offsetX, offsetY} = state.render;
+
+        ctx.save();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(53,242,255,0.07)';
+
+        for(let y=0;y<gridH;y++){
+          const py = offsetY + y * cell;
+          ctx.beginPath();
+          ctx.moveTo(offsetX, py);
+          ctx.lineTo(offsetX + (gridW - 1) * cell, py);
+          ctx.stroke();
+        }
+        for(let x=0;x<gridW;x++){
+          const px = offsetX + x * cell;
+          ctx.beginPath();
+          ctx.moveTo(px, offsetY);
+          ctx.lineTo(px, offsetY + (gridH - 1) * cell);
+          ctx.stroke();
+        }
+
+        ctx.fillStyle = 'rgba(220,248,255,0.9)';
+        for(let y=0;y<gridH;y++){
+          for(let x=0;x<gridW;x++){
+            const px = offsetX + x * cell;
+            const py = offsetY + y * cell;
+            ctx.beginPath();
+            ctx.arc(px, py, 2.2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        ctx.restore();
+      }
+
+      function getArrowAnchor(line){
+        const pts = getDisplayedPoints(line);
+        if(!pts.length) return null;
+        const head = pts[pts.length - 1];
+        const v = dirVec(line.dir);
+        return { x: head.x + v.x * 0.55, y: head.y + v.y * 0.55 };
+      }
+
+      function drawArrow(line){
+        const a = getArrowAnchor(line);
+        if(!a) return;
+
+        const p = gridToPixel(a);
+        const v = dirVec(line.dir);
+        const angle = Math.atan2(v.y, v.x);
+        const size = 14;
+
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(angle);
+        ctx.strokeStyle = '#ffe66d';
+        ctx.fillStyle = '#ffe66d';
+        ctx.lineWidth = 2;
+
+        ctx.beginPath();
+        ctx.moveTo(-size * 0.8, 0);
+        ctx.lineTo(size * 0.2, 0);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(size * 0.65, 0);
+        ctx.lineTo(size * 0.05, -size * 0.4);
+        ctx.lineTo(size * 0.05, size * 0.4);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.restore();
+      }
+
+      function drawCollisionFx(line){
+        if(!line.collisionFx) return;
+
+        const p = gridToPixel(line.collisionFx.point);
+        const time = line.collisionFx.time;
+        const alpha = Math.max(0, 1 - time / 0.75);
+        const pulse = 1 + 0.25 * Math.sin(time * 30);
+        const r = 10 * pulse;
+
+        ctx.save();
+        ctx.strokeStyle = `rgba(255,90,90,${0.9 * alpha})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.strokeStyle = `rgba(255,200,90,${0.8 * alpha})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r + 8, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(p.x - 12, p.y);
+        ctx.lineTo(p.x + 12, p.y);
+        ctx.moveTo(p.x, p.y - 12);
+        ctx.lineTo(p.x, p.y + 12);
+        ctx.stroke();
+
+        ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function drawLine(line){
+        const pts = getDisplayedPoints(line);
+        const bodyColor = line.displayRed ? '#ff4f7a' : line.baseColor;
+
+        const visible = [];
+        for(let i=0;i<pts.length;i++){
+          if(insideGridPoint(pts[i], state.gridW, state.gridH)){
+            visible.push(gridToPixel(pts[i]));
+          }
+        }
+        if(!visible.length) return;
+
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        if(visible.length >= 2){
+          ctx.strokeStyle = bodyColor;
+          ctx.globalAlpha = 0.18;
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          for(let i=0;i<visible.length;i++){
+            const p = visible[i];
+            if(i===0) ctx.moveTo(p.x,p.y);
+            else ctx.lineTo(p.x,p.y);
+          }
+          ctx.stroke();
+
+          ctx.strokeStyle = 'rgba(255,255,255,0.26)';
+          ctx.globalAlpha = 1;
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          for(let i=0;i<visible.length;i++){
+            const p = visible[i];
+            if(i===0) ctx.moveTo(p.x,p.y);
+            else ctx.lineTo(p.x,p.y);
+          }
+          ctx.stroke();
+        }
+
+        for(let i=0;i<visible.length;i++){
+          const p = visible[i];
+          const isHead = i === visible.length - 1;
+          const r = isHead ? 7.6 : 5.8;
+
+          ctx.fillStyle = bodyColor;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = 'rgba(255,255,255,0.92)';
+          ctx.beginPath();
+          ctx.arc(p.x - 1.2, p.y - 1.2, isHead ? 2.2 : 1.8, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        const c = visible[(visible.length / 2) | 0];
+        ctx.font = 'bold 12px Segoe UI';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = line.displayRed ? '#ffdbe4' : '#e6fbff';
+        ctx.fillText(line.id, c.x, c.y - 16);
+
+        ctx.restore();
+        drawArrow(line);
+      }
+
+      function drawFrame(){
+        const rect = canvas.getBoundingClientRect();
+        ctx.clearRect(0,0,rect.width,rect.height);
+
+        ctx.save();
+        ctx.strokeStyle = 'rgba(120,247,255,0.10)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(8,8,rect.width-16,rect.height-16);
+        ctx.restore();
+
+        drawGrid();
+
+        for(let i=0;i<state.lines.length;i++){
+          const line = state.lines[i];
+          if(line.status !== 'escaped'){
+            drawLine(line);
+          }
+        }
+
+        for(let i=0;i<state.lines.length;i++){
+          drawCollisionFx(state.lines[i]);
+        }
+
+        ctx.save();
+        ctx.font = 'bold 14px Segoe UI';
+        ctx.fillStyle = 'rgba(220,240,255,0.88)';
+        ctx.fillText(state.name, 24, 28);
+        ctx.restore();
+      }
+
+      function pointSegmentDistance(px, py, x1, y1, x2, y2){
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        if(dx === 0 && dy === 0) return Math.hypot(px - x1, py - y1);
+        let t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy);
+        t = Math.max(0, Math.min(1, t));
+        const x = x1 + t * dx;
+        const y = y1 + t * dy;
+        return Math.hypot(px - x, py - y);
+      }
+
+      function findClickedLine(mx, my){
+        const candidates = state.lines.filter(l => l.status === 'occupied');
+        for(let i=candidates.length - 1; i>=0; i--){
+          const line = candidates[i];
+          const pts = line.originalPoints.map(gridToPixel);
+
+          for(let k=0;k<pts.length;k++){
+            const p = pts[k];
+            if(Math.hypot(mx - p.x, my - p.y) <= 15) return line;
+          }
+
+          for(let j=0;j<pts.length - 1;j++){
+            const a = pts[j], b = pts[j+1];
+            if(pointSegmentDistance(mx, my, a.x, a.y, b.x, b.y) <= 8){
+              return line;
+            }
+          }
+        }
+        return null;
+      }
+
+      function loop(ts){
+        const t = ts || 0;
+        const dt = Math.min(0.033, (t - lastTs) / 1000 || 0.016);
+        lastTs = t;
+
+        if(state){
+          update(dt);
+          drawFrame();
+        }
+        requestAnimationFrame(loop);
+      }
+
+      canvas.addEventListener('click', (e) => {
+        if(!state || inputLocked) return;
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const line = findClickedLine(mx, my);
+        if(line) clickLine(line);
+      });
+
+      restartBtn.addEventListener('click', initGame);
+      nextBtn.addEventListener('click', initGame);
+
+      overlayBtn.addEventListener('click', () => {
+        overlay.classList.remove('show');
+        initGame();
+      });
+
+      window.addEventListener('resize', fitCanvas);
+
+      initGame();
+      requestAnimationFrame(loop);
+    })();
+  </script>
+</body>
+</html>
