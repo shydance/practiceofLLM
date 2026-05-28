@@ -498,6 +498,87 @@
         return frames;
       }
 
+      function buildFullPath(originalPoints, dir, frameCount){
+        const path = originalPoints.map(p => ({x:p.x, y:p.y}));
+        const v = dirVec(dir);
+        let head = path[path.length - 1];
+
+        for(let i = 0; i < frameCount; i++){
+          head = { x: head.x + v.x, y: head.y + v.y };
+          path.push({x:head.x, y:head.y});
+        }
+
+        return path;
+      }
+
+      function getPathPosition(path, dist){
+        if(dist <= 0) return {x:path[0].x, y:path[0].y};
+        if(dist >= path.length - 1) return {x:path[path.length-1].x, y:path[path.length-1].y};
+        const idx = Math.floor(dist);
+        const t = dist - idx;
+        const a = path[idx];
+        const b = path[idx + 1];
+        const p = {x:a.x, y:a.y};
+        if(a.x !== b.x) p.x = a.x + (b.x - a.x) * t;
+        else if(a.y !== b.y) p.y = a.y + (b.y - a.y) * t;
+        return p;
+      }
+
+      function getLinePolyline(line, progress){
+        const N = line.originalPoints.length;
+        const path = line.fullPath;
+        const tailDist = Math.max(0, progress);
+        const headDist = N - 1 + progress;
+
+        const points = [];
+        const startIdx = Math.floor(tailDist);
+        const endIdx = Math.floor(headDist);
+
+        if(tailDist > 0 && tailDist < path.length - 1 && tailDist !== startIdx){
+          points.push(getPathPosition(path, tailDist));
+        }else if(tailDist >= 0 && tailDist < path.length){
+          if(tailDist === startIdx) points.push({x:path[startIdx].x, y:path[startIdx].y});
+          else points.push({x:path[0].x, y:path[0].y});
+        }
+
+        const firstFullIdx = tailDist > 0 && tailDist !== startIdx && tailDist < path.length ? startIdx + 1 : startIdx;
+        for(let i = Math.max(0, firstFullIdx); i <= endIdx && i < path.length; i++){
+          points.push({x:path[i].x, y:path[i].y});
+        }
+
+        if(headDist > endIdx && headDist < path.length){
+          points.push(getPathPosition(path, headDist));
+        }
+
+        return points;
+      }
+
+      function getDotPositions(line, progress, gridW, gridH){
+        const N = line.originalPoints.length;
+        const positions = [];
+        for(let i = 0; i < N; i++){
+          const dist = progress + i;
+          if(dist < 0 || dist >= line.fullPath.length){
+            positions.push(null);
+            continue;
+          }
+          const p = getPathPosition(line.fullPath, dist);
+          if(insideGridPoint(p, gridW, gridH)){
+            positions.push(p);
+          }else{
+            positions.push(null);
+          }
+        }
+        return positions;
+      }
+
+      function getHeadPosition(line, progress){
+        const N = line.originalPoints.length;
+        const dist = progress + N - 1;
+        if(dist < 0 || dist >= line.fullPath.length) return null;
+        return getPathPosition(line.fullPath, dist);
+      }
+
       function lineEscapeData(line, gridW, gridH){
         const frames = buildFlowFrames(line.originalPoints, line.dir, gridW, gridH);
         const pathCells = [];
@@ -591,6 +672,7 @@
 
               const dir = sample(dirs);
 
+              const frames = buildFlowFrames(pts, dir, gridW, gridH);
               accepted = {
                 id: String.fromCharCode(65 + i),
                 baseColor: LINE_COLORS[i % LINE_COLORS.length],
@@ -601,7 +683,8 @@
                 displayRed: false,
                 animProgress: 0,
                 backProgress: 0,
-                flowFrames: buildFlowFrames(pts, dir, gridW, gridH),
+                flowFrames: frames,
+                fullPath: buildFullPath(pts, dir, frames.length),
                 collisionFx: null,
                 successSteps: 0,
                 failToStep: 0,
@@ -643,30 +726,35 @@
           { id:'D', color:"#ffe66d", pts:[[8,6],[8,7],[8,8]], dir:'S' }
         ];
 
-        return {
-          name: `Stage ${++seedCounter}`,
-          gridW: 10,
-          gridH: 10,
-          lives: 3,
-          lines: raw.map((r) => ({
-            id: r.id,
-            baseColor: r.color,
-            originalPoints: r.pts.map(([x,y]) => ({x,y})),
-            dir: r.dir,
-            status: 'occupied',
-            everFailed: false,
-            displayRed: false,
-            animProgress: 0,
-            backProgress: 0,
-            flowFrames: buildFlowFrames(r.pts.map(([x,y]) => ({x,y})), r.dir, 10, 10),
-            collisionFx: null,
-            successSteps: 0,
-            failToStep: 0,
-            speedForward: 1/0.12,
-            speedBack: 1/0.06,
-            triggeredGameOver: false
-          }))
-        };
+          return {
+            name: `Stage ${++seedCounter}`,
+            gridW: 10,
+            gridH: 10,
+            lives: 3,
+            lines: raw.map((r) => {
+              const pts = r.pts.map(([x,y]) => ({x,y}));
+              const frames = buildFlowFrames(pts, r.dir, 10, 10);
+              return {
+                id: r.id,
+                baseColor: r.color,
+                originalPoints: r.pts.map(([x,y]) => ({x,y})),
+                dir: r.dir,
+                status: 'occupied',
+                everFailed: false,
+                displayRed: false,
+                animProgress: 0,
+                backProgress: 0,
+                flowFrames: frames,
+                fullPath: buildFullPath(pts, r.dir, frames.length),
+                collisionFx: null,
+                successSteps: 0,
+                failToStep: 0,
+                speedForward: 1/0.12,
+                speedBack: 1/0.06,
+                triggeredGameOver: false
+              };
+            })
+          };
       }
 
       function initGame(){
@@ -781,56 +869,25 @@
         }
       }
 
-      function getAxisSlidePoint(a, b, t){
-        const p = {x:a.x, y:a.y};
-        if(a.x !== b.x){
-          p.x = a.x + (b.x - a.x) * t;
-        }else if(a.y !== b.y){
-          p.y = a.y + (b.y - a.y) * t;
-        }
-        return p;
-      }
-
-      function getFramePointsAt(line, progress){
-        const original = line.originalPoints;
-        const frames = line.flowFrames;
-
-        if(progress <= 0){
-          return original;
-        }
-
-        const total = frames.length;
-        if(progress >= total){
-          return frames[total - 1];
-        }
-
-        const stepIndex = Math.floor(progress);
-        const localT = progress - stepIndex;
-
-        const from = stepIndex === 0 ? original : frames[stepIndex - 1];
-        const to = frames[stepIndex];
-
-        const result = new Array(from.length);
-        for(let i=0;i<from.length;i++){
-          result[i] = getAxisSlidePoint(from[i], to[i], localT);
-        }
-        return result;
-      }
-
-      function getDisplayedPoints(line){
-        if(line.status === 'occupied') return line.originalPoints;
-        if(line.status === 'movingSuccess') return getFramePointsAt(line, line.animProgress);
+      function getDisplayedProgress(line){
+        if(line.status === 'occupied') return 0;
+        if(line.status === 'movingSuccess') return line.animProgress;
         if(line.status === 'movingFailForward'){
-          const progress = Math.min(line.animProgress, line.failToStep);
-          return getFramePointsAt(line, progress);
+          return Math.min(line.animProgress, line.failToStep);
         }
         if(line.status === 'movingFailBack'){
-          const progress = Math.max(0, line.failToStep - line.backProgress);
-          return getFramePointsAt(line, progress);
+          return Math.max(0, line.failToStep - line.backProgress);
         }
-        return [];
+        return 0;
       }
 
+      function getArrowAnchor(line){
+        const progress = getDisplayedProgress(line);
+        const headP = getHeadPosition(line, progress);
+        if(!headP) return null;
+        const v = dirVec(line.dir);
+        return { x: headP.x + v.x * 0.55, y: headP.y + v.y * 0.55 };
+      }
       function update(dt){
         let escapedChanged = false;
 
@@ -930,14 +987,6 @@
         ctx.restore();
       }
 
-      function getArrowAnchor(line){
-        const pts = getDisplayedPoints(line);
-        if(!pts.length) return null;
-        const head = pts[pts.length - 1];
-        const v = dirVec(line.dir);
-        return { x: head.x + v.x * 0.55, y: head.y + v.y * 0.55 };
-      }
-
       function drawArrow(line){
         const a = getArrowAnchor(line);
         if(!a) return;
@@ -1006,13 +1055,16 @@
       }
 
       function drawLine(line){
-        const pts = getDisplayedPoints(line);
+        const progress = getDisplayedProgress(line);
         const bodyColor = line.displayRed ? '#ff4f7a' : line.baseColor;
+        const {gridW, gridH} = state;
 
+        const polyline = getLinePolyline(line, progress);
         const visible = [];
-        for(let i=0;i<pts.length;i++){
-          if(insideGridPoint(pts[i], state.gridW, state.gridH)){
-            visible.push(gridToPixel(pts[i]));
+        for(let i=0;i<polyline.length;i++){
+          const p = polyline[i];
+          if(insideGridPoint(p, gridW, gridH)){
+            visible.push(gridToPixel(p));
           }
         }
         if(!visible.length) return;
@@ -1045,9 +1097,12 @@
           ctx.stroke();
         }
 
-        for(let i=0;i<visible.length;i++){
-          const p = visible[i];
-          const isHead = i === visible.length - 1;
+        const dotPositions = getDotPositions(line, progress, gridW, gridH);
+        for(let i=0;i<dotPositions.length;i++){
+          const dp = dotPositions[i];
+          if(!dp) continue;
+          const p = gridToPixel(dp);
+          const isHead = i === dotPositions.length - 1;
           const r = isHead ? 7.6 : 5.8;
 
           ctx.fillStyle = bodyColor;
