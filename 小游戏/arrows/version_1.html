@@ -220,6 +220,9 @@
         <div class="btns">
           <button id="restartBtn">重新生成</button>
           <button id="nextBtn" class="secondary">下一局</button>
+          <button id="exportBtn" class="secondary">导出JSON</button>
+          <button id="importBtn" class="secondary">导入JSON</button>
+          <input type="file" id="importFile" accept=".json" style="display:none" />
         </div>
       </div>
     </div>
@@ -246,6 +249,9 @@
       const escapedText = document.getElementById('escapedText');
       const restartBtn = document.getElementById('restartBtn');
       const nextBtn = document.getElementById('nextBtn');
+      const exportBtn = document.getElementById('exportBtn');
+      const importBtn = document.getElementById('importBtn');
+      const importFile = document.getElementById('importFile');
       const overlay = document.getElementById('overlay');
       const overlayBtn = document.getElementById('overlayBtn');
       const modalTitle = document.getElementById('modalTitle');
@@ -765,6 +771,99 @@
         updateHUD();
       }
 
+      function serializeState(){
+        return {
+          name: state.name,
+          gridW: state.gridW,
+          gridH: state.gridH,
+          lives: state.lives,
+          lines: state.lines.map(l => ({
+            id: l.id,
+            baseColor: l.baseColor,
+            originalPoints: l.originalPoints.map(p => ({x:p.x, y:p.y})),
+            dir: l.dir,
+            status: l.status,
+            everFailed: l.everFailed,
+            displayRed: l.displayRed,
+            animProgress: l.animProgress,
+            backProgress: l.backProgress,
+            failToStep: l.failToStep,
+            successSteps: l.successSteps
+          }))
+        };
+      }
+
+      function exportLevel(){
+        const json = serializeState();
+        const blob = new Blob([JSON.stringify(json, null, 2)], {type:'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${state.name.replace(/\s+/g,'_')}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      function loadLevelFromData(data){
+        const gridW = data.gridW || 10;
+        const gridH = data.gridH || 10;
+
+        state = {
+          name: data.name || 'Imported Stage',
+          gridW,
+          gridH,
+          lives: data.lives != null ? data.lives : CONFIG.lives,
+          lines: data.lines.map(l => {
+            const pts = l.originalPoints.map(p => ({x:p.x, y:p.y}));
+            const frames = buildFlowFrames(pts, l.dir, gridW, gridH);
+            return {
+              id: l.id,
+              baseColor: l.baseColor,
+              originalPoints: pts,
+              dir: l.dir,
+              status: l.status || 'occupied',
+              everFailed: l.everFailed || false,
+              displayRed: l.displayRed || false,
+              animProgress: l.animProgress || 0,
+              backProgress: l.backProgress || 0,
+              flowFrames: frames,
+              fullPath: buildFullPath(pts, l.dir, frames.length),
+              collisionFx: null,
+              successSteps: l.successSteps || frames.length,
+              failToStep: l.failToStep || 0,
+              speedForward: 1/0.12,
+              speedBack: 1/0.06,
+              triggeredGameOver: false
+            };
+          })
+        };
+
+        inputLocked = false;
+        overlay.classList.remove('show');
+        fitCanvas();
+        updateHUD();
+      }
+
+      function importLevel(){
+        importFile.click();
+      }
+
+      function handleImportFile(e){
+        const file = e.target.files[0];
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          try{
+            const data = JSON.parse(ev.target.result);
+            loadLevelFromData(data);
+          }catch(err){
+            alert('JSON 解析失败：' + err.message);
+          }
+        };
+        reader.readAsText(file);
+        importFile.value = '';
+      }
+
       function fitCanvas(){
         const rect = canvas.getBoundingClientRect();
         canvas.width = Math.floor(rect.width * dpr);
@@ -1212,6 +1311,9 @@
 
       restartBtn.addEventListener('click', initGame);
       nextBtn.addEventListener('click', initGame);
+      exportBtn.addEventListener('click', exportLevel);
+      importBtn.addEventListener('click', importLevel);
+      importFile.addEventListener('change', handleImportFile);
 
       overlayBtn.addEventListener('click', () => {
         overlay.classList.remove('show');
