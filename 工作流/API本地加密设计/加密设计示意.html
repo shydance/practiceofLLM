@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>oc-keysafe · 给 opencode 的本地 Key 小金库</title>
+<style>
+  :root{--bg:#0d1117;--card:#161b22;--line:#30363d;--text:#e6edf3;--mute:#7d8590;--amber:#f0883e;--blue:#58a6ff;--green:#3fb950;--red:#f85149}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:var(--bg);color:var(--text);line-height:1.65;padding:48px 24px;max-width:980px;margin:0 auto}
+  h1{font-size:36px;font-weight:700;letter-spacing:-.5px}
+  h1 .accent{color:var(--amber)}
+  h2{font-size:22px;margin:48px 0 16px;padding-bottom:8px;border-bottom:1px solid var(--line);font-weight:600}
+  h3{font-size:16px;margin:20px 0 8px;color:var(--amber);font-weight:600}
+  p,li{color:var(--text)}
+  .sub{color:var(--mute);margin-top:8px;font-size:15px}
+  code{font-family:'JetBrains Mono','Cascadia Code',Consolas,monospace;background:#1f242c;padding:2px 6px;border-radius:4px;font-size:13px;color:#ffa657}
+  pre{background:#1f242c;border:1px solid var(--line);border-radius:8px;padding:16px;overflow-x:auto;font-family:'JetBrains Mono',Consolas,monospace;font-size:13px;line-height:1.55;margin:12px 0}
+  pre code{background:none;padding:0;color:#e6edf3}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:16px 0}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}
+  .card .icon{font-size:22px;margin-bottom:8px}
+  .card .title{font-weight:600;margin-bottom:4px}
+  .card .desc{font-size:14px;color:var(--mute)}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line)}
+  th{color:var(--mute);font-weight:500;background:#0f1419}
+  td code{font-size:12px}
+  .flow{display:flex;gap:8px;margin:16px 0;flex-wrap:wrap}
+  .step{flex:1;min-width:160px;background:var(--card);border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:6px;padding:12px}
+  .step .n{color:var(--amber);font-weight:600;font-size:12px;letter-spacing:1px}
+  .step .t{font-weight:600;margin-top:4px}
+  .step .d{color:var(--mute);font-size:13px;margin-top:4px}
+  .ok{color:var(--green)}
+  .no{color:var(--red)}
+  .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;background:#1f242c;color:var(--mute);margin-left:6px}
+  .faq dt{font-weight:600;margin-top:14px;color:var(--text)}
+  .faq dd{color:var(--mute);margin-top:4px;font-size:14px}
+  .footer{margin-top:64px;padding-top:24px;border-top:1px solid var(--line);color:var(--mute);font-size:13px;text-align:center}
+  .kbd{font-family:Consolas,monospace;background:#1f242c;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:1px 6px;font-size:12px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>oc-<span class="accent">keysafe</span></h1>
+  <p class="sub">给 opencode 的本地 Key 小金库 · Windows 单用户 · DPAPI 加密 · 零云同步</p>
+</header>
+
+<h2>它解决什么问题</h2>
+<p>opencode 自定义 provider 的 API Key 默认明文存在 <code>auth.json</code>，<code>{env:...}</code> 替换在自定义 provider 上有 bug，<code>{file:...}</code> 又只能读明文。oc-keysafe 把所有 key 加密落盘，仅在 opencode 跑起来的那段时间释放成明文，opencode 一退出，明文立刻清空。</p>
+
+<h2>核心特性</h2>
+<div class="grid">
+  <div class="card"><div class="icon">🔒</div><div class="title">DPAPI 本地加密</div><div class="desc">绑定当前 Windows 账户，密文换台机器 / 换账户都解不开</div></div>
+  <div class="card"><div class="icon">⚡</div><div class="title">零密码使用</div><div class="desc">不需要主密码，登录态即是凭证</div></div>
+  <div class="card"><div class="icon">🧹</div><div class="title">自动清理</div><div class="desc">opencode 退出 → 明文文件立即销毁</div></div>
+  <div class="card"><div class="icon">📋</div><div class="title">完整 CRUD</div><div class="desc">add / list / get / update / rename / remove</div></div>
+  <div class="card"><div class="icon">🔌</div><div class="title">opencode 原生集成</div><div class="desc">通过官方 <code>{file:...}</code> 占位符接入，不改 opencode 二进制</div></div>
+  <div class="card"><div class="icon">☁️</div><div class="title">永不上云</div><div class="desc">密文与配置全部本地，不发送任何网络请求</div></div>
+</div>
+
+<h2>工作流</h2>
+<div class="flow">
+  <div class="step"><div class="n">STEP 01</div><div class="t">init</div><div class="d">建目录 + 设 ACL</div></div>
+  <div class="step"><div class="n">STEP 02</div><div class="t">add</div><div class="d">输入 key（屏幕不回显）→ DPAPI 加密落盘</div></div>
+  <div class="step"><div class="n">STEP 03</div><div class="t">install-config</div><div class="d">改 opencode.json 用 {file:...} 引用 runtime 路径</div></div>
+  <div class="step"><div class="n">STEP 04</div><div class="t">run</div><div class="d">解密到 runtime → 启动 opencode → 等待</div></div>
+  <div class="step"><div class="n">STEP 05</div><div class="t">cleanup</div><div class="d">opencode 退出 → 明文销毁 → 锁释放</div></div>
+</div>
+
+<h2>命令速查</h2>
+<table>
+  <thead><tr><th>命令</th><th>作用</th><th>典型用法</th></tr></thead>
+  <tbody>
+    <tr><td><code>init</code></td><td>初始化目录</td><td><code>oc-keysafe init</code></td></tr>
+    <tr><td><code>add</code></td><td>新增 key</td><td><code>oc-keysafe add bytecat-kiro --note "ByteCat Kiro 组"</code></td></tr>
+    <tr><td><code>list</code></td><td>列出所有 key（不解密）</td><td><code>oc-keysafe list</code></td></tr>
+    <tr><td><code>get</code></td><td>查看单个 key</td><td><code>oc-keysafe get bytecat-kiro --copy</code></td></tr>
+    <tr><td><code>update</code></td><td>更新 key 或备注</td><td><code>oc-keysafe update bytecat-kiro --note "新备注"</code></td></tr>
+    <tr><td><code>rename</code></td><td>重命名</td><td><code>oc-keysafe rename old new</code></td></tr>
+    <tr><td><code>remove</code></td><td>删除（需二次确认）</td><td><code>oc-keysafe remove bytecat-kiro</code></td></tr>
+    <tr><td><code>run</code></td><td>解密并启动 opencode</td><td><code>oc-keysafe run</code></td></tr>
+    <tr><td><code>check</code></td><td>体检</td><td><code>oc-keysafe check</code></td></tr>
+    <tr><td><code>install-config</code></td><td>改写 opencode.json</td><td><code>oc-keysafe install-config --provider kiro --key bytecat-kiro</code></td></tr>
+  </tbody>
+</table>
+
+<h2>opencode.json 集成示例</h2>
+<pre><code>{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "kiro": {
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "https://codecdn.bytecatcode.org/v1",
+        "apiKey": "{file:C:/Users/&lt;USER&gt;/AppData/Local/oc-keysafe/runtime/bytecat-kiro.key}"
+      },
+      "models": { "claude-sonnet-4-5-20250929": {} }
+    }
+  }
+}</code></pre>
+<p class="sub">路径用正斜杠避免 JSON 转义；oc-keysafe install-config 会自动算好这个路径。</p>
+
+<h2>5 分钟上手</h2>
+<pre><code># 1. 初始化
+oc-keysafe init
+
+# 2. 加 3 把 ByteCat 分组 key
+oc-keysafe add bytecat-kiro   --note "Claude 系"
+oc-keysafe add bytecat-codex  --note "GPT 系"
+oc-keysafe add bytecat-gemini --note "Gemini 系"
+
+# 3. 让 opencode.json 引用
+oc-keysafe install-config --provider kiro   --key bytecat-kiro
+oc-keysafe install-config --provider codex  --key bytecat-codex
+oc-keysafe install-config --provider gemini --key bytecat-gemini
+
+# 4. 体检
+oc-keysafe check
+
+# 5. 启动 opencode（以后只用这一条）
+oc-keysafe run</code></pre>
+
+<h2>安全模型</h2>
+<table>
+  <thead><tr><th>场景</th><th>是否防护</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>静态磁盘被偷</td><td class="ok">✓ 防护</td><td>密文需当前 Windows 账户登录态才能解</td></tr>
+    <tr><td>同机其他普通账户</td><td class="ok">✓ 防护</td><td>DPAPI 范围 CurrentUser</td></tr>
+    <tr><td>误提交到 git</td><td class="ok">✓ 防护</td><td>密文不在项目目录</td></tr>
+    <tr><td>剪贴板残留</td><td class="ok">✓ 防护</td><td><code>get --copy</code> 60s 自动清</td></tr>
+    <tr><td>同账户恶意进程</td><td class="no">✗ 不防</td><td>能调用 DPAPI 解密 / 读 runtime 明文</td></tr>
+    <tr><td>SYSTEM 权限攻击者</td><td class="no">✗ 不防</td><td>超出 DPAPI 边界</td></tr>
+    <tr><td>opencode 进程内存 dump</td><td class="no">✗ 不防</td><td>明文已交给 opencode</td></tr>
+    <tr><td>跨电脑迁移</td><td class="no">✗ 不防</td><td>新机器需重新 add（设计取舍）</td></tr>
+  </tbody>
+</table>
+
+<h2>FAQ</h2>
+<dl class="faq">
+  <dt>为什么不用主密码 / age / GPG？</dt>
+  <dd>主密码会引入"每次启动都要输入"的摩擦，违背"无感安全"目标；age/GPG 需要额外二进制依赖。DPAPI 是 Windows 内置的最小可行加密，等价于 Credential Manager 的底层。</dd>
+
+  <dt>密文复制到另一台电脑能用吗？</dt>
+  <dd>不能。DPAPI 主密钥绑定 Windows 账户与机器，迁移需要重新 add（这是预期行为）。</dd>
+
+  <dt>opencode 跑着的时候明文存在哪？</dt>
+  <dd><code>%LOCALAPPDATA%\oc-keysafe\runtime\</code>，仅当前用户可读。opencode 退出立即清空。</dd>
+
+  <dt>如果 oc-keysafe run 被强杀（taskkill /F）？</dt>
+  <dd>注册了 <code>PowerShell.Exiting</code> 事件做兜底；极端情况残留时下次 run 会先清空。</dd>
+
+  <dt>能不能直接 <span class="kbd">opencode</span> 启动而不走 run？</dt>
+  <dd>能启动，但 runtime 目录是空的，<code>{file:...}</code> 解析失败 → provider 无 key。<b>必须走 oc-keysafe run</b>。可在 PowerShell 配置文件加别名 <code>opencode = oc-keysafe run</code>。</dd>
+
+  <dt>支持 macOS / Linux 吗？</dt>
+  <dd>v1 不支持（DPAPI 是 Windows 专属）。后续版本会用 Keychain / Secret Service 补齐。</dd>
+
+  <dt>为什么不做 secure-erase？</dt>
+  <dd>SSD 的 wear-leveling 让任何用户态 secure-erase 都不可靠，做了反而误导。明文驻留时长已是最低。</dd>
+</dl>
+
+<h2>路线图</h2>
+<table>
+  <thead><tr><th>版本</th><th>主题</th><th>关键能力</th></tr></thead>
+  <tbody>
+    <tr><td>v1.0</td><td>本地小金库 <span class="badge">当前</span></td><td>CRUD + run + install-config</td></tr>
+    <tr><td>v1.1</td><td>易用性</td><td>TUI 选择菜单 / 自动备份 meta</td></tr>
+    <tr><td>v1.2</td><td>跨账户迁移</td><td>导出明文 + 二次确认 / 新机重加密</td></tr>
+    <tr><td>v2.0</td><td>跨平台</td><td>macOS Keychain / Linux Secret Service</td></tr>
+  </tbody>
+</table>
+
+<div class="footer">
+  oc-keysafe v1.0 · 单文件 PowerShell · Windows 10 1607+ · 不联网 · 不上云
+</div>
+
+</body>
+</html>
