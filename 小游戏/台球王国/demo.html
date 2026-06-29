@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>弹射军团 - 核心玩法演示</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #1f2d3a;
+            overflow: hidden;
+            touch-action: none;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        #gameCanvas {
+            display: block;
+            background: #f0f0f0;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.45);
+        }
+
+        #info {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: white;
+            font-size: 11px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            background: rgba(0,0,0,0.65);
+            padding: 7px 9px;
+            border-radius: 6px;
+            line-height: 1.5;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+<div id="info">
+    <div>城堡: <span id="castleHP">15</span></div>
+    <div>玩家: <span id="playerHP">15</span></div>
+    <div>敌军: <span id="enemies">0</span></div>
+    <div>我军: <span id="soldiers">0</span></div>
+</div>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+canvas.width = 450;
+canvas.height = 800;
+
+// =======================
+// 区域定义
+// =======================
+const CASTLE_AREA_END = 120;
+
+const BATTLEFIELD_START = 120;
+const BATTLEFIELD_END = 520;
+
+const PLAYER_HP_BAR_Y = 520;
+
+const MULTIPLIER_AREA_START = 540;
+const MULTIPLIER_AREA_END = 660;
+
+const LAUNCH_BALL_Y = 710;
+
+const PROGRESS_BAR_Y = 750;
+
+// 底部空气墙，在进度条上方
+const AIR_WALL_BOTTOM = PROGRESS_BAR_Y - 10;
+
+const CENTER_X = canvas.width / 2;
+const GRID_SIZE = 20;
+
+// =======================
+// 手感参数
+// =======================
+const SOLDIER_SPEED = 28;
+
+const ENEMY_SPAWN_INTERVAL = 10000;
+const ENEMY_SPAWN_COUNT = 5;
+
+const BALL_RADIUS = 16;
+
+// 本版修改：发射球飞行速度改为原来的 1/2
+const BALL_MAX_SPEED = 6.5;
+const BALL_MIN_LAUNCH_SPEED = 1.6;
+const BALL_POWER_DIVISOR = 17;
+
+// 无重力
+const GRAVITY = 0;
+const WALL_RESTITUTION = 0.86;
+const AIR_FRICTION = 0.996;
+
+const MAX_BOUNCES = 4;
+
+const MULTIPLIER_RADIUS = 20;
+
+// =======================
+// 游戏数据
+// =======================
+const game = {
+    playerHP: 15,
+    castleHP: 15,
+
+    progress: 0,
+    maxProgress: 15,
+
+    currentType: '步兵',
+    currentValue: 1,
+
+    isDragging: false,
+    dragCurrentX: 0,
+    dragCurrentY: 0,
+
+    ball: {
+        x: CENTER_X,
+        y: LAUNCH_BALL_Y,
+        vx: 0,
+        vy: 0,
+        radius: BALL_RADIUS,
+        active: false,
+        bounces: 0,
+
+        // 发射球进入弹射倍率区后，会被限制在倍率区内反弹
+        hasEnteredMultiplierArea: false
+    },
+
+    multiplierBalls: [],
+    hitMultipliers: [],
+
+    mySoldiers: [],
+    enemySoldiers: [],
+
+    nextSoldierGroup: 0,
+    lastEnemySpawn: Date.now(),
+
+    gameOver: false,
+    resultText: ''
+};
+
+// =======================
+// 倍率球布局
+// 所有倍率球都严格放在弹射倍率区内
+// 弹射倍率区 y = 540 ~ 660
+// 倍率球半径 = 20
+// 倍率球中心 y 必须在 560 ~ 640
+// =======================
+function resetMultiplierBalls() {
+    game.multiplierBalls = [
+        // 上层
+        { x: 105, y: 565, value: 1, label: '+1', hit: false },
+        { x: 225, y: 565, value: 2, label: '+2', hit: false },
+        { x: 345, y: 565, value: 1, label: '+1', hit: false },
+
+        // 中层
+        { x: 150, y: 600, value: 2, label: '×2', isMult: true, hit: false },
+        { x: 300, y: 600, value: 3, label: '+3', hit: false },
+
+        // 下层
+        { x: 95, y: 635, value: 2, label: '+2', hit: false },
+        { x: 225, y: 635, value: -5, label: '-5', isNeg: true, hit: false },
+        { x: 355, y: 635, value: 3, label: '×3', isMult: true, hit: false }
+    ];
+}
+
+resetMultiplierBalls();
+
+// =======================
+// 工具函数
+// =======================
+function getLength(x, y) {
+    return Math.sqrt(x * x + y * y);
+}
+
+function normalizeVelocity(vx, vy, maxSpeed) {
+    const speed = getLength(vx, vy);
+
+    if (speed > maxSpeed) {
+        const scale = maxSpeed / speed;
+        return {
+            vx: vx * scale,
+            vy: vy * scale
+        };
+    }
+
+    return { vx, vy };
+}
+
+function resetBallPosition() {
+    game.ball.x = CENTER_X;
+    game.ball.y = LAUNCH_BALL_Y;
+    game.ball.vx = 0;
+    game.ball.vy = 0;
+    game.ball.bounces = 0;
+    game.ball.active = false;
+    game.ball.hasEnteredMultiplierArea = false;
+}
+
+function isBallTouchingMultiplierArea() {
+    return (
+        game.ball.y + game.ball.radius >= MULTIPLIER_AREA_START &&
+        game.ball.y - game.ball.radius <= MULTIPLIER_AREA_END
+    );
+}
+
+// =======================
+// 进度条与兵种变化
+// 始发球只代表 1 个士兵
+// 不添加兵种差异
+// 进度条满后自动重置
+// =======================
+function updateProgress(dt) {
+    if (game.gameOver) return;
+
+    game.progress += dt;
+
+    if (game.progress >= game.maxProgress) {
+        game.progress = game.progress % game.maxProgress;
+    }
+
+    const percent = game.progress / game.maxProgress;
+
+    if (percent < 0.33) {
+        game.currentType = '步兵';
+        game.currentValue = 1;
+    } else if (percent < 0.67) {
+        game.currentType = '弓兵';
+        game.currentValue = 1;
+    } else {
+        game.currentType = '骑兵';
+        game.currentValue = 1;
+    }
+}
+
+// =======================
+// 敌方出兵
+// 每 10 秒出 5 个步兵
+// =======================
+function spawnEnemies(currentTime) {
+    if (game.gameOver) return;
+
+    if (currentTime - game.lastEnemySpawn >= ENEMY_SPAWN_INTERVAL) {
+        const groupId = currentTime;
+
+        for (let i = 0; i < ENEMY_SPAWN_COUNT; i++) {
+            game.enemySoldiers.push({
+                x: CENTER_X + (i - 2) * 18,
+                y: CASTLE_AREA_END + 8,
+                group: groupId
+            });
+        }
+
+        game.lastEnemySpawn = currentTime;
+    }
+}
+
+// =======================
+// 结算士兵数量
+// 始发球基础值 = 1
+// =======================
+function calculateSoldiers() {
+    let addValue = 0;
+    let multValue = 1;
+
+    game.hitMultipliers.forEach(m => {
+        if (m.isMult) {
+            multValue *= m.value;
+        } else {
+            addValue += m.value;
+        }
+    });
+
+    const soldierCount = Math.max(0, Math.floor(game.currentValue * multValue + addValue));
+    const groupId = game.nextSoldierGroup++;
+
+    for (let i = 0; i < soldierCount; i++) {
+        const col = i % 16;
+        const row = Math.floor(i / 16);
+
+        game.mySoldiers.push({
+            x: CENTER_X + (col - 7.5) * 18,
+            y: BATTLEFIELD_END - 22 - row * 18,
+            group: groupId
+        });
+    }
+
+    game.hitMultipliers = [];
+}
+
+// =======================
+// 士兵移动与战斗
+// =======================
+function updateSoldiers(dt) {
+    if (game.gameOver) return;
+
+    game.mySoldiers.sort((a, b) => a.y - b.y);
+    game.enemySoldiers.sort((a, b) => b.y - a.y);
+
+    const myFront = game.mySoldiers[0];
+    const enemyFront = game.enemySoldiers[0];
+
+    game.mySoldiers.forEach(s => {
+        if (!enemyFront) {
+            s.y -= SOLDIER_SPEED * dt;
+        } else {
+            if (s.y > enemyFront.y + GRID_SIZE) {
+                s.y -= SOLDIER_SPEED * dt;
+            }
+        }
+    });
+
+    game.enemySoldiers.forEach(s => {
+        if (!myFront) {
+            s.y += SOLDIER_SPEED * dt;
+        } else {
+            if (s.y < myFront.y - GRID_SIZE) {
+                s.y += SOLDIER_SPEED * dt;
+            }
+        }
+    });
+
+    game.mySoldiers.sort((a, b) => a.y - b.y);
+    game.enemySoldiers.sort((a, b) => b.y - a.y);
+
+    while (game.mySoldiers.length > 0 && game.enemySoldiers.length > 0) {
+        const mf = game.mySoldiers[0];
+        const ef = game.enemySoldiers[0];
+
+        if (Math.abs(mf.y - ef.y) < GRID_SIZE) {
+            game.mySoldiers.shift();
+            game.enemySoldiers.shift();
+        } else {
+            break;
+        }
+    }
+
+    for (let i = game.mySoldiers.length - 1; i >= 0; i--) {
+        const s = game.mySoldiers[i];
+
+        if (s.y <= CASTLE_AREA_END + 18) {
+            game.castleHP = Math.max(0, game.castleHP - 1);
+            game.mySoldiers.splice(i, 1);
+        }
+    }
+
+    for (let i = game.enemySoldiers.length - 1; i >= 0; i--) {
+        const s = game.enemySoldiers[i];
+
+        if (s.y >= BATTLEFIELD_END - 4) {
+            game.playerHP = Math.max(0, game.playerHP - 1);
+            game.enemySoldiers.splice(i, 1);
+        }
+    }
+
+    if (game.castleHP <= 0) {
+        game.gameOver = true;
+        game.resultText = '胜利！';
+    }
+
+    if (game.playerHP <= 0) {
+        game.gameOver = true;
+        game.resultText = '失败！';
+    }
+}
+
+// =======================
+// 台球物理
+// 无重力
+// 发射球进入弹射倍率区后，限制在倍率区内
+// =======================
+function updatePhysics() {
+    if (!game.ball.active || game.gameOver) return;
+
+    game.ball.x += game.ball.vx;
+    game.ball.y += game.ball.vy;
+
+    // 无重力，只保留轻微阻力
+    game.ball.vy += GRAVITY;
+    game.ball.vx *= AIR_FRICTION;
+    game.ball.vy *= AIR_FRICTION;
+
+    // 发射球一旦接触/进入弹射倍率区，就锁定在倍率区内
+    if (!game.ball.hasEnteredMultiplierArea && isBallTouchingMultiplierArea()) {
+        game.ball.hasEnteredMultiplierArea = true;
+
+        game.ball.x = Math.max(
+            game.ball.radius,
+            Math.min(canvas.width - game.ball.radius, game.ball.x)
+        );
+
+        game.ball.y = Math.max(
+            MULTIPLIER_AREA_START + game.ball.radius,
+            Math.min(MULTIPLIER_AREA_END - game.ball.radius, game.ball.y)
+        );
+    }
+
+    if (game.ball.hasEnteredMultiplierArea) {
+        // 左墙
+        if (game.ball.x - game.ball.radius < 0) {
+            game.ball.x = game.ball.radius;
+            game.ball.vx *= -WALL_RESTITUTION;
+            game.ball.bounces++;
+        }
+
+        // 右墙
+        if (game.ball.x + game.ball.radius > canvas.width) {
+            game.ball.x = canvas.width - game.ball.radius;
+            game.ball.vx *= -WALL_RESTITUTION;
+            game.ball.bounces++;
+        }
+
+        // 倍率区上边界
+        if (game.ball.y - game.ball.radius < MULTIPLIER_AREA_START) {
+            game.ball.y = MULTIPLIER_AREA_START + game.ball.radius;
+            game.ball.vy *= -WALL_RESTITUTION;
+            game.ball.bounces++;
+        }
+
+        // 倍率区下边界
+        if (game.ball.y + game.ball.radius > MULTIPLIER_AREA_END) {
+            game.ball.y = MULTIPLIER_AREA_END - game.ball.radius;
+            game.ball.vy *= -WALL_RESTITUTION;
+            game.ball.bounces++;
+        }
+    } else {
+        // 尚未进入倍率区前，只限制底部空气墙，避免向下飞出
+        if (game.ball.y + game.ball.radius > AIR_WALL_BOTTOM) {
+            game.ball.y = AIR_WALL_BOTTOM - game.ball.radius;
+            game.ball.vy *= -WALL_RESTITUTION;
+            game.ball.bounces++;
+        }
+
+        if (game.ball.x - game.ball.radius < 0) {
+            game.ball.x = game.ball.radius;
+            game.ball.vx *= -WALL_RESTITUTION;
+            game.ball.bounces++;
+        }
+
+        if (game.ball.x + game.ball.radius > canvas.width) {
+            game.ball.x = canvas.width - game.ball.radius;
+            game.ball.vx *= -WALL_RESTITUTION;
+            game.ball.bounces++;
+        }
+    }
+
+    // 碰撞倍率球：吸收倍率球，并继续在倍率区内偏折
+    for (let i = 0; i < game.multiplierBalls.length; i++) {
+        const mb = game.multiplierBalls[i];
+        if (mb.hit) continue;
+
+        const dx = game.ball.x - mb.x;
+        const dy = game.ball.y - mb.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < game.ball.radius + MULTIPLIER_RADIUS) {
+            mb.hit = true;
+            game.hitMultipliers.push(mb);
+            game.ball.bounces++;
+
+            const nx = dist === 0 ? 0 : dx / dist;
+            const ny = dist === 0 ? -1 : dy / dist;
+            const pushOut = game.ball.radius + MULTIPLIER_RADIUS - dist + 2;
+
+            game.ball.x += nx * pushOut;
+            game.ball.y += ny * pushOut;
+
+            // 本版修改：命中倍率球后的速度也改为原来的 1/2
+            const randomAngle = -Math.PI / 2 + (Math.random() - 0.5) * 1.7;
+            const speed = 3.25 + Math.random() * 1.1;
+
+            game.ball.vx = Math.cos(randomAngle) * speed;
+            game.ball.vy = Math.sin(randomAngle) * speed;
+
+            game.ball.hasEnteredMultiplierArea = true;
+
+            game.ball.x = Math.max(
+                game.ball.radius,
+                Math.min(canvas.width - game.ball.radius, game.ball.x)
+            );
+
+            game.ball.y = Math.max(
+                MULTIPLIER_AREA_START + game.ball.radius,
+                Math.min(MULTIPLIER_AREA_END - game.ball.radius, game.ball.y)
+            );
+
+            break;
+        }
+    }
+
+    const speed = getLength(game.ball.vx, game.ball.vy);
+
+    if (
+        game.ball.bounces >= MAX_BOUNCES ||
+        (speed < 0.28 && game.ball.bounces > 0)
+    ) {
+        resetBallPosition();
+        calculateSoldiers();
+        resetMultiplierBalls();
+    }
+}
+
+// =======================
+// 绘制
+// =======================
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    drawCastleArea();
+    drawBattlefield();
+    drawBottomArea();
+
+    if (game.gameOver) {
+        drawGameOver();
+    }
+}
+
+function drawCastleArea() {
+    const grd = ctx.createLinearGradient(0, 0, 0, CASTLE_AREA_END);
+    grd.addColorStop(0, '#2c3e50');
+    grd.addColorStop(1, '#34495e');
+
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, canvas.width, CASTLE_AREA_END);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.72)';
+    ctx.font = 'bold 11px Arial';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('敌方城堡区', 10, 8);
+
+    ctx.fillStyle = '#8b4513';
+    ctx.fillRect(CENTER_X - 50, 60, 100, 50);
+    ctx.strokeStyle = '#2b1a0e';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(CENTER_X - 50, 60, 100, 50);
+
+    ctx.fillStyle = '#3d2615';
+    ctx.fillRect(CENTER_X - 13, 82, 26, 28);
+
+    ctx.fillStyle = '#654321';
+    ctx.beginPath();
+    ctx.moveTo(CENTER_X - 62, 60);
+    ctx.lineTo(CENTER_X, 34);
+    ctx.lineTo(CENTER_X + 62, 60);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#1f1f1f';
+    ctx.fillRect(CENTER_X - 82, 15, 164, 20);
+
+    ctx.fillStyle = '#555';
+    ctx.fillRect(CENTER_X - 80, 17, 160, 16);
+
+    ctx.fillStyle = '#e74c3c';
+    ctx.fillRect(CENTER_X - 80, 17, Math.max(0, game.castleHP / 15) * 160, 16);
+
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(CENTER_X - 80, 17, 160, 16);
+
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 11px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`城堡 ${Math.max(0, game.castleHP).toFixed(0)} / 15`, CENTER_X, 25);
+}
+
+function drawBattlefield() {
+    const grd = ctx.createLinearGradient(0, BATTLEFIELD_START, 0, BATTLEFIELD_END);
+    grd.addColorStop(0, '#a8b4b7');
+    grd.addColorStop(1, '#899799');
+
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, BATTLEFIELD_START, canvas.width, BATTLEFIELD_END - BATTLEFIELD_START);
+
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.font = 'bold 11px Arial';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('战场区', 10, BATTLEFIELD_START + 8);
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 8]);
+    ctx.beginPath();
+    ctx.moveTo(0, (BATTLEFIELD_START + BATTLEFIELD_END) / 2);
+    ctx.lineTo(canvas.width, (BATTLEFIELD_START + BATTLEFIELD_END) / 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(90,100,100,0.35)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 5]);
+
+    for (let y = BATTLEFIELD_START + 40; y < BATTLEFIELD_END; y += 40) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+    }
+
+    ctx.setLineDash([]);
+
+    game.enemySoldiers.forEach(s => {
+        ctx.fillStyle = '#e74c3c';
+        ctx.fillRect(s.x - 8, s.y - 8, 16, 16);
+
+        ctx.strokeStyle = '#9f2d22';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(s.x - 8, s.y - 8, 16, 16);
+
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.fillRect(s.x - 3, s.y - 10, 6, 4);
+    });
+
+    game.mySoldiers.forEach(s => {
+        ctx.fillStyle = '#3498db';
+        ctx.fillRect(s.x - 8, s.y - 8, 16, 16);
+
+        ctx.strokeStyle = '#21618c';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(s.x - 8, s.y - 8, 16, 16);
+
+        ctx.fillStyle = 'rgba(255,255,255,0.75)';
+        ctx.fillRect(s.x - 3, s.y - 10, 6, 4);
+    });
+
+    ctx.strokeStyle = 'rgba(46, 204, 113, 0.85)';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(0, BATTLEFIELD_END - 2);
+    ctx.lineTo(canvas.width, BATTLEFIELD_END - 2);
+    ctx.stroke();
+}
+
+function drawBottomArea() {
+    ctx.fillStyle = '#233140';
+    ctx.fillRect(0, BATTLEFIELD_END, canvas.width, canvas.height - BATTLEFIELD_END);
+
+    ctx.fillStyle = '#111';
+    ctx.fillRect(38, PLAYER_HP_BAR_Y + 2, canvas.width - 76, 18);
+
+    ctx.fillStyle = '#555';
+    ctx.fillRect(40, PLAYER_HP_BAR_Y + 4, canvas.width - 80, 14);
+
+    ctx.fillStyle = '#2ecc71';
+    ctx.fillRect(40, PLAYER_HP_BAR_Y + 4, Math.max(0, game.playerHP / 15) * (canvas.width - 80), 14);
+
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(40, PLAYER_HP_BAR_Y + 4, canvas.width - 80, 14);
+
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 10px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`玩家 ${Math.max(0, game.playerHP).toFixed(0)} / 15`, CENTER_X, PLAYER_HP_BAR_Y + 11);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.72)';
+    ctx.font = 'bold 11px Arial';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('弹射倍率区', 10, MULTIPLIER_AREA_START + 3);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.04)';
+    ctx.fillRect(8, MULTIPLIER_AREA_START, canvas.width - 16, MULTIPLIER_AREA_END - MULTIPLIER_AREA_START);
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.32)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(
+        8,
+        MULTIPLIER_AREA_START,
+        canvas.width - 16,
+        MULTIPLIER_AREA_END - MULTIPLIER_AREA_START
+    );
+
+    // 发射球进入倍率区后的真实限制边界提示
+    ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.strokeRect(
+        BALL_RADIUS,
+        MULTIPLIER_AREA_START + BALL_RADIUS,
+        canvas.width - BALL_RADIUS * 2,
+        MULTIPLIER_AREA_END - MULTIPLIER_AREA_START - BALL_RADIUS * 2
+    );
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.font = '10px Arial';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('进入后限制在此区内', canvas.width - 10, MULTIPLIER_AREA_START + 14);
+
+    game.multiplierBalls.forEach(mb => {
+        if (mb.hit) return;
+
+        if (mb.isNeg) {
+            ctx.fillStyle = '#e74c3c';
+        } else if (mb.isMult) {
+            ctx.fillStyle = '#f39c12';
+        } else {
+            ctx.fillStyle = '#2ecc71';
+        }
+
+        ctx.beginPath();
+        ctx.arc(mb.x, mb.y, MULTIPLIER_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        ctx.beginPath();
+        ctx.arc(mb.x - 6, mb.y - 7, 6, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = '#111';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(mb.x, mb.y, MULTIPLIER_RADIUS, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = mb.isNeg ? 'white' : '#222';
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(mb.label, mb.x, mb.y);
+    });
+
+    if (!game.ball.active) {
+        drawReadyBall();
+    } else {
+        drawActiveBall();
+    }
+
+    drawProgressBar();
+}
+
+function drawReadyBall() {
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.beginPath();
+    ctx.ellipse(game.ball.x, game.ball.y + 18, 28, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#3498db';
+    ctx.beginPath();
+    ctx.arc(game.ball.x, game.ball.y, game.ball.radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath();
+    ctx.arc(game.ball.x - 5, game.ball.y - 6, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = '#1f5f8b';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(game.ball.x, game.ball.y, game.ball.radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 10px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(game.currentType, game.ball.x, game.ball.y - 4);
+
+    ctx.font = '9px Arial';
+    ctx.fillText('x1', game.ball.x, game.ball.y + 7);
+
+    if (game.isDragging) {
+        const dx = game.ball.x - game.dragCurrentX;
+        const dy = game.ball.y - game.dragCurrentY;
+
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const power = Math.min(dist / 120, 1);
+
+        const arrowLength = Math.min(dist * 0.8, 130);
+        const angle = Math.atan2(dy, dx);
+
+        const endX = game.ball.x + Math.cos(angle) * arrowLength;
+        const endY = game.ball.y + Math.sin(angle) * arrowLength;
+
+        const r = Math.floor(80 + power * 175);
+        const g = Math.floor(230 - power * 155);
+        const b = 45;
+
+        ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.92)`;
+        ctx.lineWidth = 6;
+        ctx.lineCap = 'round';
+
+        ctx.beginPath();
+        ctx.moveTo(game.ball.x, game.ball.y);
+        ctx.lineTo(endX, endY);
+        ctx.stroke();
+
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.92)`;
+
+        ctx.beginPath();
+        ctx.moveTo(endX, endY);
+        ctx.lineTo(
+            endX - 20 * Math.cos(angle - 0.4),
+            endY - 20 * Math.sin(angle - 0.4)
+        );
+        ctx.lineTo(
+            endX - 20 * Math.cos(angle + 0.4),
+            endY - 20 * Math.sin(angle + 0.4)
+        );
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.45)`;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(game.ball.x, game.ball.y, game.ball.radius + power * 15, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+        ctx.font = 'bold 10px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`力度 ${Math.round(power * 100)}%`, game.ball.x, game.ball.y - 35);
+    }
+}
+
+function drawActiveBall() {
+    ctx.fillStyle = game.ball.hasEnteredMultiplierArea ? '#e67e22' : '#e74c3c';
+    ctx.beginPath();
+    ctx.arc(game.ball.x, game.ball.y, game.ball.radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath();
+    ctx.arc(game.ball.x - 5, game.ball.y - 6, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = '#9f2d22';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(game.ball.x, game.ball.y, game.ball.radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 10px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`${game.ball.bounces}/${MAX_BOUNCES}`, game.ball.x, game.ball.y);
+}
+
+function drawProgressBar() {
+    const barX = 25;
+    const barY = PROGRESS_BAR_Y;
+    const barW = canvas.width - 50;
+    const barH = 28;
+
+    ctx.fillStyle = '#111';
+    ctx.fillRect(barX - 2, barY - 2, barW + 4, barH + 4);
+
+    ctx.fillStyle = '#34495e';
+    ctx.fillRect(barX, barY, barW, barH);
+
+    const progressW = (game.progress / game.maxProgress) * barW;
+
+    const grd = ctx.createLinearGradient(barX, barY, barX + barW, barY);
+    grd.addColorStop(0, '#3498db');
+    grd.addColorStop(0.5, '#9b59b6');
+    grd.addColorStop(1, '#e67e22');
+
+    ctx.fillStyle = grd;
+    ctx.fillRect(barX, barY, progressW, barH);
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(barX + barW * 0.33, barY);
+    ctx.lineTo(barX + barW * 0.33, barY + barH);
+    ctx.moveTo(barX + barW * 0.67, barY);
+    ctx.lineTo(barX + barW * 0.67, barY + barH);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#2c3e50';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(barX, barY, barW, barH);
+
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 10px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`${game.currentType} x1  ${game.progress.toFixed(1)}s`, CENTER_X, PROGRESS_BAR_Y + 14);
+}
+
+function drawGameOver() {
+    ctx.fillStyle = 'rgba(0,0,0,0.82)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = game.resultText === '胜利！' ? '#2ecc71' : '#e74c3c';
+    ctx.font = 'bold 52px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(game.resultText, CENTER_X, canvas.height / 2 - 20);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.font = 'bold 14px Arial';
+    ctx.fillText('刷新页面重新开始', CENTER_X, canvas.height / 2 + 35);
+}
+
+// =======================
+// 输入
+// =======================
+function handlePointerDown(x, y) {
+    if (game.ball.active || game.gameOver) return;
+
+    const dx = x - game.ball.x;
+    const dy = y - game.ball.y;
+
+    if (Math.sqrt(dx * dx + dy * dy) <= game.ball.radius + 40) {
+        game.isDragging = true;
+        game.dragCurrentX = x;
+        game.dragCurrentY = y;
+    }
+}
+
+function handlePointerMove(x, y) {
+    if (!game.isDragging || game.gameOver) return;
+
+    game.dragCurrentX = x;
+    game.dragCurrentY = y;
+}
+
+function handlePointerUp() {
+    if (!game.isDragging || game.gameOver) return;
+
+    let dx = (game.ball.x - game.dragCurrentX) / BALL_POWER_DIVISOR;
+    let dy = (game.ball.y - game.dragCurrentY) / BALL_POWER_DIVISOR;
+
+    let speed = getLength(dx, dy);
+
+    if (speed < BALL_MIN_LAUNCH_SPEED) {
+        game.isDragging = false;
+        return;
+    }
+
+    const normalized = normalizeVelocity(dx, dy, BALL_MAX_SPEED);
+
+    game.ball.vx = normalized.vx;
+    game.ball.vy = normalized.vy;
+
+    game.ball.active = true;
+    game.isDragging = false;
+}
+
+canvas.addEventListener('mousedown', e => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    handlePointerDown(e.clientX - rect.left, e.clientY - rect.top);
+});
+
+canvas.addEventListener('mousemove', e => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    handlePointerMove(e.clientX - rect.left, e.clientY - rect.top);
+});
+
+canvas.addEventListener('mouseup', e => {
+    e.preventDefault();
+    handlePointerUp();
+});
+
+canvas.addEventListener('mouseleave', e => {
+    if (game.isDragging) {
+        handlePointerUp();
+    }
+});
+
+canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    const rect = canvas.getBoundingClientRect();
+    handlePointerDown(touch.clientX - rect.left, touch.clientY - rect.top);
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    const rect = canvas.getBoundingClientRect();
+    handlePointerMove(touch.clientX - rect.left, touch.clientY - rect.top);
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+    e.preventDefault();
+    handlePointerUp();
+}, { passive: false });
+
+// =======================
+// 主循环
+// =======================
+let lastTime = Date.now();
+
+function gameLoop() {
+    const currentTime = Date.now();
+    let dt = (currentTime - lastTime) / 1000;
+    lastTime = currentTime;
+
+    dt = Math.min(dt, 0.05);
+
+    updateProgress(dt);
+    updatePhysics();
+    spawnEnemies(currentTime);
+    updateSoldiers(dt);
+    draw();
+
+    document.getElementById('playerHP').textContent = Math.max(0, game.playerHP).toFixed(0);
+    document.getElementById('castleHP').textContent = Math.max(0, game.castleHP).toFixed(0);
+    document.getElementById('soldiers').textContent = game.mySoldiers.length;
+    document.getElementById('enemies').textContent = game.enemySoldiers.length;
+
+    if (!game.gameOver) {
+        requestAnimationFrame(gameLoop);
+    } else {
+        draw();
+    }
+}
+
+gameLoop();
+</script>
+</body>
+</html>
